@@ -6,12 +6,46 @@ import uuid
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
+# IMPORTANT: Use MongoDB Atlas connection string (same as server.py)
+MONGO_URL = "mongodb+srv://tejkonda_db_user:1lLTtftx3f1qBl5R@cluster0.hl0lsgv.mongodb.net/?appName=Cluster0"
+
 async def seed_database():
-    # Connect to MongoDB
-    client = AsyncIOMotorClient("mongodb://localhost:27017")
+    # Connect to MongoDB Atlas
+    print("🔌 Connecting to MongoDB Atlas...")
+    client = AsyncIOMotorClient(MONGO_URL)
     db = client["placement_prep_db"]
     
+    # Test connection
+    try:
+        await client.admin.command('ping')
+        print("✅ Connected to MongoDB Atlas successfully!\n")
+    except Exception as e:
+        print(f"❌ Failed to connect to MongoDB: {e}")
+        print("\n💡 Troubleshooting:")
+        print("   1. Check your internet connection")
+        print("   2. Verify MongoDB Atlas credentials")
+        print("   3. Make sure your IP is whitelisted in MongoDB Atlas")
+        client.close()
+        return
+    
+    try:
+        # Drop existing collections to start fresh
+        print("🗑️  Dropping existing collections...")
+        await db.users.drop()
+        await db.quizzes.drop()
+        await db.challenges.drop()
+        print("✅ Collections dropped\n")
+    except Exception as e:
+        print(f"Note: {e}\n")
+    
+    # Create indexes
+    print("📇 Creating indexes...")
+    await db.users.create_index("email", unique=True)
+    await db.users.create_index("id", unique=True)
+    print("✅ Indexes created\n")
+    
     # Create admin user
+    print("👤 Creating admin user...")
     admin_hash = pwd_context.hash("admin123")
     admin = {
         "id": str(uuid.uuid4()),
@@ -26,6 +60,7 @@ async def seed_database():
     }
     
     # Create student user
+    print("👤 Creating student user...")
     student_hash = pwd_context.hash("student123")
     student = {
         "id": str(uuid.uuid4()),
@@ -41,8 +76,10 @@ async def seed_database():
     
     # Insert users
     await db.users.insert_many([admin, student])
+    print(f"✅ Inserted {await db.users.count_documents({})} users\n")
     
     # Create sample quiz
+    print("📝 Creating quizzes...")
     quiz = {
         "id": str(uuid.uuid4()),
         "title": "Data Structures Fundamentals",
@@ -78,6 +115,7 @@ async def seed_database():
     await db.quizzes.insert_one(quiz)
     
     # Create sample challenge
+    print("💻 Creating coding challenges...")
     challenge = {
         "id": str(uuid.uuid4()),
         "title": "Two Sum Problem",
@@ -154,9 +192,19 @@ async def seed_database():
     
     await db.challenges.insert_one(challenge2)
     
-    print("✅ Database seeded successfully!")
-    print(f"Admin login: admin@prep.com / admin123")
-    print(f"Student login: student@prep.com / student123")
+    print("\n" + "="*50)
+    print("✅ DATABASE SEEDED SUCCESSFULLY!")
+    print("="*50)
+    print(f"\n📊 Statistics:")
+    print(f"   • Users: {await db.users.count_documents({})}")
+    print(f"   • Quizzes: {await db.quizzes.count_documents({})}")
+    print(f"   • Challenges: {await db.challenges.count_documents({})}")
+    print(f"\n🔐 Test Credentials:")
+    print(f"   📧 Admin: admin@prep.com")
+    print(f"   🔑 Password: admin123")
+    print(f"\n   📧 Student: student@prep.com")
+    print(f"   🔑 Password: student123")
+    print("\n" + "="*50)
     
     client.close()
 

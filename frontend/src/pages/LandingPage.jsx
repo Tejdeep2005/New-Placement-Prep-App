@@ -8,82 +8,114 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Brain, Code, Trophy, Users, Zap, Target, Award, Rocket } from 'lucide-react';
 import { toast } from 'sonner';
 
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
+// Fix: Use localhost:8000 for backend
+const BACKEND_URL = 'http://localhost:8000';
 const API = `${BACKEND_URL}/api`;
 
 const LandingPage = ({ onLogin }) => {
   const navigate = useNavigate();
   const [loginData, setLoginData] = useState({ email: '', password: '' });
-  const [registerData, setRegisterData] = useState({ email: '', name: '', password: '' });
+  const [registerData, setRegisterData] = useState({ email: '', name: '', password: '', role: 'student' });
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    const hash = window.location.hash;
-    if (hash && hash.includes('session_id=')) {
-      const sessionId = hash.split('session_id=')[1].split('&')[0];
-      handleGoogleCallback(sessionId);
-    }
-  }, []);
+    (async () => {
+      // Check for token in query string or hash (support multiple callback styles)
+      const params = new URLSearchParams(window.location.search);
+      let token = params.get('token');
 
-  const handleGoogleCallback = async (sessionId) => {
-    try {
-      const response = await axios.post(`${API}/auth/google-session?session_id=${sessionId}`);
-      onLogin(response.data.user, response.data.access_token);
-      window.location.hash = '';
-      navigate('/dashboard');
-      toast.success('Logged in successfully!');
-    } catch (error) {
-      toast.error('Google login failed');
-    }
-  };
+      if (!token && window.location.hash) {
+        const hash = window.location.hash.substring(1); // remove '#'
+        const hashParams = new URLSearchParams(hash);
+        token = hashParams.get('token');
+      }
+
+      if (token) {
+        try {
+          const res = await axios.get(`${API}/auth/me`, {
+            headers: { Authorization: `Bearer ${token}` },
+          });
+          onLogin(res.data, token);
+          window.history.replaceState({}, document.title, window.location.pathname);
+          navigate('/dashboard');
+          toast.success('Logged in successfully!');
+          return;
+        } catch (err) {
+          console.error('Token login failed', err);
+          toast.error('Google login failed');
+        }
+      }
+
+      // Fallback: older flow where backend returns session_id in hash and expects server-side session exchange
+      if (window.location.hash && window.location.hash.includes('session_id=')) {
+        const sessionId = window.location.hash.split('session_id=')[1].split('&')[0];
+        try {
+          const response = await axios.post(`${API}/auth/google-session?session_id=${sessionId}`);
+          onLogin(response.data.user, response.data.access_token);
+          window.location.hash = '';
+          navigate('/dashboard');
+          toast.success('Logged in successfully!');
+        } catch (error) {
+          console.error('Session exchange failed', error);
+          toast.error('Google login failed');
+        }
+      }
+    })();
+  }, [onLogin, navigate]);
 
   const handleLogin = async (e) => {
     e.preventDefault();
     setLoading(true);
     try {
+      console.log('Attempting login to:', `${API}/auth/login`);
       const response = await axios.post(`${API}/auth/login`, loginData);
+      console.log('Login successful:', response.data);
       onLogin(response.data.user, response.data.access_token);
       toast.success('Logged in successfully!');
       navigate('/dashboard');
     } catch (error) {
-      toast.error(error.response?.data?.detail || 'Login failed');
+      console.error('Login error:', error);
+      const errorMsg = error.response?.data?.detail || error.message || 'Login failed';
+      toast.error(errorMsg);
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
   const handleRegister = async (e) => {
     e.preventDefault();
     setLoading(true);
     try {
-      const response = await axios.post(`${API}/auth/register`, registerData);
+      console.log('Attempting registration to:', `${API}/auth/register`);
+      // ensure role present (backend expects role or defaults to student)
+      const payload = { ...registerData, role: registerData.role || 'student' };
+      const response = await axios.post(`${API}/auth/register`, payload);
+      console.log('Registration successful:', response.data);
       onLogin(response.data.user, response.data.access_token);
       toast.success('Registered successfully!');
       navigate('/dashboard');
     } catch (error) {
-      toast.error(error.response?.data?.detail || 'Registration failed');
+      console.error('Register error:', error);
+      const errorMsg = error.response?.data?.detail || error.message || 'Registration failed';
+      toast.error(errorMsg);
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
-  const handleGoogleLogin = async () => {
-    try {
-      const response = await axios.get(`${API}/auth/google-login`);
-      window.location.href = response.data.url;
-    } catch (error) {
-      toast.error('Failed to initiate Google login');
-    }
+  const handleGoogleLogin = () => {
+    // Direct redirect to backend OAuth start endpoint (backend should redirect to Google)
+    window.location.href = `${API}/auth/google/login`;
   };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-900 via-teal-900 to-gray-900 text-white overflow-hidden">
-      {/* Hero Section */}
       <div className="relative">
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_30%_50%,rgba(20,184,166,0.1),transparent_50%)]" />
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_70%_50%,rgba(6,182,212,0.1),transparent_50%)]" />
         
         <div className="container mx-auto px-4 py-20 relative z-10">
           <div className="grid lg:grid-cols-2 gap-12 items-center">
-            {/* Left Content */}
             <div className="space-y-8">
               <div className="inline-flex items-center gap-2 px-4 py-2 bg-teal-500/10 border border-teal-500/20 rounded-full">
                 <Zap className="w-4 h-4 text-teal-400" />
@@ -112,7 +144,6 @@ const LandingPage = ({ onLogin }) => {
               </div>
             </div>
 
-            {/* Right Auth Card */}
             <Card className="glass-effect p-8 border-teal-500/20 shadow-2xl" data-testid="auth-card">
               <Tabs defaultValue="login" className="w-full">
                 <TabsList className="grid w-full grid-cols-2 mb-6">
@@ -152,6 +183,11 @@ const LandingPage = ({ onLogin }) => {
                     >
                       {loading ? 'Loading...' : 'Login'}
                     </Button>
+                    
+                    {/* Quick login hint */}
+                    <div className="text-xs text-center text-gray-400 mt-2">
+                      Test: student@prep.com / student123
+                    </div>
                   </form>
                 </TabsContent>
                 
@@ -228,7 +264,6 @@ const LandingPage = ({ onLogin }) => {
             </Card>
           </div>
 
-          {/* Features Grid */}
           <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6 mt-20">
             {[
               { icon: Brain, title: 'AI Mock Interviews', desc: 'Practice with Claude AI' },
